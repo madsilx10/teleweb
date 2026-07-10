@@ -12,31 +12,64 @@ async function api(path, opts = {}) {
   return data;
 }
 
+/* ---------- Drawer (mobile slide-in panel) ---------- */
+function openDrawer() {
+  $("drawer").classList.add("open");
+  $("drawerOverlay").classList.remove("hidden");
+}
+function closeDrawer() {
+  $("drawer").classList.remove("open");
+  $("drawerOverlay").classList.add("hidden");
+}
+$("btnDrawerToggle").onclick = openDrawer;
+$("btnDrawerClose").onclick = closeDrawer;
+$("drawerOverlay").onclick = closeDrawer;
+
+/* ---------- Accounts ---------- */
 async function refreshAccounts() {
   const accounts = await api("/api/accounts");
   const box = $("accountList");
   box.innerHTML = "";
+  if (accounts.length === 0) {
+    box.innerHTML = `<div class="statusText">Belum ada akun. Tambah dulu di bawah.</div>`;
+  }
   accounts.forEach((acc) => {
     const div = document.createElement("div");
     div.className = "accItem" + (acc.label === activeLabel ? " active" : "");
-    div.innerHTML = `<span>${acc.label} (${acc.phone})</span><span class="del" data-label="${acc.label}">✕</span>`;
+    div.innerHTML = `
+      <div class="accInfo">
+        <span class="dot ${acc.connected ? "online" : ""}"></span>
+        <div>
+          <div class="accLabel">${acc.label}</div>
+          <div class="accPhone">${acc.phone}</div>
+        </div>
+      </div>
+      <span class="del" data-label="${acc.label}">✕</span>
+    `;
     div.onclick = (e) => {
       if (e.target.classList.contains("del")) return;
       activeLabel = acc.label;
-      $("activeAccountLabel").textContent = `Akun aktif: ${acc.label}`;
+      $("activeAccountLabel").textContent = acc.label;
       refreshAccounts();
       loadOfficialChat();
+      closeDrawer();
     };
     div.querySelector(".del").onclick = async (e) => {
       e.stopPropagation();
+      if (!confirm(`Hapus akun "${acc.label}"?`)) return;
       await api(`/api/accounts/${acc.label}`, { method: "DELETE" });
-      if (activeLabel === acc.label) activeLabel = null;
+      if (activeLabel === acc.label) {
+        activeLabel = null;
+        $("activeAccountLabel").textContent = "no account";
+        $("messageView").innerHTML = `<div class="emptyState"><span class="prompt">›</span> Pilih atau tambah akun buat mulai</div>`;
+      }
       refreshAccounts();
     };
     box.appendChild(div);
   });
 }
 
+/* ---------- Add account / login ---------- */
 $("btnAddAccount").onclick = () => {
   $("loginBox").classList.toggle("hidden");
 };
@@ -52,25 +85,6 @@ $("tabPyrogram").onclick = () => {
   $("tabPhone").classList.remove("active");
   $("pyrogramPanel").classList.remove("hidden");
   $("phoneLoginPanel").classList.add("hidden");
-};
-
-$("btnImportPyrogram").onclick = async () => {
-  const label = $("pyroLabel").value.trim();
-  const pyrogramSession = $("pyroSession").value.trim();
-  if (!label || !pyrogramSession) return alert("Isi label & session string dulu");
-  $("loginStatus").textContent = "Mengonversi & verifikasi session...";
-  try {
-    const result = await api("/api/login/import-pyrogram", {
-      method: "POST",
-      body: JSON.stringify({ label, pyrogramSession }),
-    });
-    $("loginStatus").textContent = `Berhasil! Login sebagai @${result.username || result.firstName || result.userId}`;
-    $("pyroLabel").value = "";
-    $("pyroSession").value = "";
-    refreshAccounts();
-  } catch (e) {
-    $("loginStatus").textContent = "Error: " + e.message;
-  }
 };
 
 $("btnSendCode").onclick = async () => {
@@ -127,6 +141,25 @@ $("btnVerifyPassword").onclick = async () => {
   }
 };
 
+$("btnImportPyrogram").onclick = async () => {
+  const label = $("pyroLabel").value.trim();
+  const pyrogramSession = $("pyroSession").value.trim();
+  if (!label || !pyrogramSession) return alert("Isi label & session string dulu");
+  $("loginStatus").textContent = "Mengonversi & verifikasi session...";
+  try {
+    const result = await api("/api/login/import-pyrogram", {
+      method: "POST",
+      body: JSON.stringify({ label, pyrogramSession }),
+    });
+    $("loginStatus").textContent = `Berhasil! Login sebagai @${result.username || result.firstName || result.userId}`;
+    $("pyroLabel").value = "";
+    $("pyroSession").value = "";
+    refreshAccounts();
+  } catch (e) {
+    $("loginStatus").textContent = "Error: " + e.message;
+  }
+};
+
 function resetLoginForm() {
   $("loginBox").classList.add("hidden");
   $("codeBox").classList.add("hidden");
@@ -137,43 +170,14 @@ function resetLoginForm() {
   $("loginPassword").value = "";
 }
 
-// Lightweight default: only fetch messages from Telegram's official service chat.
-// Much faster than loading the full dialog list.
-async function loadOfficialChat() {
-  if (!activeLabel) return;
-  $("chatList").classList.add("hidden");
-  try {
-    const messages = await api(`/api/chats/${activeLabel}/official`);
-    renderMessages(messages);
-  } catch (e) {
-    alert("Error: " + e.message);
-  }
-}
-
-// Opt-in: full dialog list, only fetched when the user explicitly asks for it
-async function loadChats() {
-  if (!activeLabel) return;
-  const chats = await api(`/api/chats/${activeLabel}`);
-  const box = $("chatList");
-  box.classList.remove("hidden");
-  box.innerHTML = "";
-  chats.forEach((c) => {
-    const div = document.createElement("div");
-    div.className = "chatItem";
-    div.textContent = `${c.name}${c.unreadCount ? ` (${c.unreadCount})` : ""}`;
-    div.onclick = () => loadMessages(c.name);
-    box.appendChild(div);
-  });
-}
-
-$("btnShowAllChats").onclick = () => {
-  if (!activeLabel) return alert("Pilih akun dulu");
-  loadChats();
-};
-
+/* ---------- Chats & messages ---------- */
 function renderMessages(messages) {
   const view = $("messageView");
   view.innerHTML = "";
+  if (messages.length === 0) {
+    view.innerHTML = `<div class="emptyState"><span class="prompt">›</span> Belum ada pesan di sini</div>`;
+    return;
+  }
   messages.forEach((m) => {
     const div = document.createElement("div");
     div.className = "msg" + (m.out ? " out" : "");
@@ -184,6 +188,45 @@ function renderMessages(messages) {
   });
   view.scrollTop = view.scrollHeight;
 }
+
+// Lightweight default: only fetch messages from Telegram's official service chat.
+async function loadOfficialChat() {
+  if (!activeLabel) return;
+  $("chatList").classList.add("hidden");
+  $("messageView").innerHTML = `<div class="emptyState"><span class="prompt">›</span> Memuat...</div>`;
+  try {
+    const messages = await api(`/api/chats/${activeLabel}/official`);
+    renderMessages(messages);
+  } catch (e) {
+    $("messageView").innerHTML = `<div class="emptyState">Error: ${e.message}</div>`;
+  }
+}
+
+// Opt-in: full dialog list
+async function loadChats() {
+  if (!activeLabel) return;
+  const chats = await api(`/api/chats/${activeLabel}`);
+  const box = $("chatList");
+  box.classList.remove("hidden");
+  box.innerHTML = "";
+  chats.forEach((c) => {
+    const div = document.createElement("div");
+    div.className = "chatItem";
+    div.innerHTML = `<span>${c.name}</span>${c.unreadCount ? `<span class="badge">${c.unreadCount}</span>` : ""}`;
+    div.onclick = () => {
+      loadMessages(c.name);
+      box.classList.add("hidden");
+    };
+    box.appendChild(div);
+  });
+}
+
+$("btnShowAllChats").onclick = () => {
+  if (!activeLabel) return alert("Pilih akun dulu");
+  const box = $("chatList");
+  if (box.classList.contains("hidden")) loadChats();
+  else box.classList.add("hidden");
+};
 
 async function loadMessages(usernameOrId) {
   if (!activeLabel) return;
@@ -200,6 +243,7 @@ async function loadMessages(usernameOrId) {
 $("btnLoadUserChat").onclick = () => {
   const username = $("usernameInput").value.trim();
   if (!username) return;
+  if (!activeLabel) return alert("Pilih akun dulu");
   loadMessages(username);
 };
 
