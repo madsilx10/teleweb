@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<title>Telegram Multi-Account Client</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>Akun</h2>
+      <div id="accountList"></div>
+      <button id="btnAddAccount">+ Tambah Akun</button>
+
+      <div id="loginBox" class="hidden">
+        <h3>Login Akun Baru</h3>
+        <div class="tabs">
+          <button id="tabPhone" class="tabBtn active">Phone/OTP</button>
+          <button id="tabPyrogram" class="tabBtn">Import Pyrogram</button>
+        </div>
+
+        <div id="phoneLoginPanel">
+          <input id="loginLabel" placeholder="Label akun (bebas, mis: akun1)" />
+          <input id="loginPhone" placeholder="No HP (+62...)" />
+          <button id="btnSendCode">Kirim OTP</button>
+
+          <div id="codeBox" class="hidden">
+            <input id="loginCode" placeholder="Kode OTP" />
+            <button id="btnVerifyCode">Verifikasi Kode</button>
+          </div>
+
+          <div id="passBox" class="hidden">
+            <input id="loginPassword" type="password" placeholder="Password 2FA" />
+            <button id="btnVerifyPassword">Verifikasi Password</button>
+          </div>
+        </div>
+
+        <div id="pyrogramPanel" class="hidden">
+          <input id="pyroLabel" placeholder="Label akun (bebas, mis: akun1)" />
+          <textarea id="pyroSession" rows="4" placeholder="Paste Pyrogram session string di sini"></textarea>
+          <button id="btnImportPyrogram">Import</button>
+        </div>
+
+        <p id="loginStatus"></p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="chatHeader">
+        <span id="activeAccountLabel">Pilih akun dulu</span>
+        <input id="usernameInput" placeholder="username buat lihat chat lain..." />
+        <button id="btnLoadUserChat">Buka</button>
+        <button id="btnShowAllChats" class="secondary">Lihat semua chat</button>
+      </div>
+
+      <div class="content">
+        <div id="chatList" class="chatList hidden"></div>
+        <div id="messageView" class="messageView"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
