@@ -51,7 +51,7 @@ async function refreshAccounts() {
       activeLabel = acc.label;
       $("activeAccountLabel").textContent = acc.label;
       refreshAccounts();
-      loadOfficialChat();
+      showChatEntry();
       closeDrawer();
     };
     div.querySelector(".del").onclick = async (e) => {
@@ -189,44 +189,32 @@ function renderMessages(messages) {
   view.scrollTop = view.scrollHeight;
 }
 
-// Lightweight default: only fetch messages from Telegram's official service chat.
+// Shows a single chat bubble ("Telegram") — messages only load when tapped.
+function showChatEntry() {
+  const box = $("chatList");
+  box.classList.remove("collapsed");
+  box.innerHTML = "";
+
+  const div = document.createElement("div");
+  div.className = "chatItem";
+  div.innerHTML = `<span>Telegram</span>`;
+  div.onclick = () => loadOfficialChat();
+  box.appendChild(div);
+
+  $("messageView").innerHTML = `<div class="emptyState"><span class="prompt">›</span> Buka chat di sebelah buat lihat pesan</div>`;
+}
+
 async function loadOfficialChat() {
   if (!activeLabel) return;
-  $("chatList").classList.add("hidden");
   $("messageView").innerHTML = `<div class="emptyState"><span class="prompt">›</span> Memuat...</div>`;
   try {
     const messages = await api(`/api/chats/${activeLabel}/official`);
     renderMessages(messages);
+    $("chatList").classList.add("collapsed");
   } catch (e) {
     $("messageView").innerHTML = `<div class="emptyState">Error: ${e.message}</div>`;
   }
 }
-
-// Opt-in: full dialog list
-async function loadChats() {
-  if (!activeLabel) return;
-  const chats = await api(`/api/chats/${activeLabel}`);
-  const box = $("chatList");
-  box.classList.remove("hidden");
-  box.innerHTML = "";
-  chats.forEach((c) => {
-    const div = document.createElement("div");
-    div.className = "chatItem";
-    div.innerHTML = `<span>${c.name}</span>${c.unreadCount ? `<span class="badge">${c.unreadCount}</span>` : ""}`;
-    div.onclick = () => {
-      loadMessages(c.name);
-      box.classList.add("hidden");
-    };
-    box.appendChild(div);
-  });
-}
-
-$("btnShowAllChats").onclick = () => {
-  if (!activeLabel) return alert("Pilih akun dulu");
-  const box = $("chatList");
-  if (box.classList.contains("hidden")) loadChats();
-  else box.classList.add("hidden");
-};
 
 async function loadMessages(usernameOrId) {
   if (!activeLabel) return;
@@ -235,6 +223,7 @@ async function loadMessages(usernameOrId) {
       `/api/messages/${activeLabel}?username=${encodeURIComponent(usernameOrId)}&limit=50`
     );
     renderMessages(messages);
+    $("chatList").classList.add("collapsed");
   } catch (e) {
     alert("Error: " + e.message);
   }
