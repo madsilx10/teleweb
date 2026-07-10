@@ -230,7 +230,7 @@ app.delete("/api/accounts/:label", async (req, res) => {
 // Telegram's official service notifications account (login codes, announcements)
 const TELEGRAM_OFFICIAL_ID = 777000;
 
-// Default view: just the official Telegram chat (fast — no full dialog list fetch)
+// The only chat shown by default — Telegram's own service notifications chat.
 app.get("/api/chats/:label/official", async (req, res) => {
   const { label } = req.params;
   try {
@@ -243,26 +243,6 @@ app.get("/api/chats/:label/official", async (req, res) => {
       text: m.message,
     }));
     res.json(list.reverse());
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Full dialog list — only fetched on demand (heavier, so it's opt-in via a button)
-app.get("/api/chats/:label", async (req, res) => {
-  const { label } = req.params;
-  try {
-    const client = await requireClient(label);
-    const dialogs = await client.getDialogs({ limit: 50 });
-    const list = dialogs.map((d) => ({
-      id: d.id?.toString(),
-      name: d.title || d.name || "(no name)",
-      unreadCount: d.unreadCount,
-      isUser: d.isUser,
-      isGroup: d.isGroup,
-      isChannel: d.isChannel,
-    }));
-    res.json(list);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
