@@ -8,6 +8,8 @@
 // 4. npm start
 // 5. Open http://localhost:3000
 
+require("dotenv").config();
+
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
