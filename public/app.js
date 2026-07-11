@@ -1,4 +1,5 @@
 let activeLabel = null;
+let pendingLoginKey = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -41,7 +42,7 @@ async function refreshAccounts() {
       <div class="accInfo">
         <div class="avatar">${initial}<span class="dot ${acc.connected ? "online" : ""}"></span></div>
         <div>
-          <div class="accLabel">${acc.label}</div>
+          <div class="accLabel">${acc.label}${acc.username ? ` <span class="accUsername">@${acc.username}</span>` : ""}</div>
           <div class="accPhoneRow">
             <span class="accPhone">${acc.phone}</span>
             <button class="copyBtn" data-phone="${acc.phone}" title="Copy nomor">⧉</button>
@@ -105,13 +106,14 @@ $("tabPyrogram").onclick = () => {
 $("btnSendCode").onclick = async () => {
   const label = $("loginLabel").value.trim();
   const phone = $("loginPhone").value.trim();
-  if (!label || !phone) return alert("Isi label & no HP dulu");
+  if (!phone) return alert("Isi no HP dulu");
   $("loginStatus").textContent = "Mengirim kode...";
   try {
-    await api("/api/login/send-code", {
+    const result = await api("/api/login/send-code", {
       method: "POST",
       body: JSON.stringify({ label, phone }),
     });
+    pendingLoginKey = result.key;
     $("codeBox").classList.remove("hidden");
     $("loginStatus").textContent = "Kode terkirim, cek Telegram/SMS";
   } catch (e) {
@@ -120,18 +122,17 @@ $("btnSendCode").onclick = async () => {
 };
 
 $("btnVerifyCode").onclick = async () => {
-  const label = $("loginLabel").value.trim();
   const code = $("loginCode").value.trim();
   try {
     const result = await api("/api/login/verify-code", {
       method: "POST",
-      body: JSON.stringify({ label, code }),
+      body: JSON.stringify({ key: pendingLoginKey, code }),
     });
     if (result.needPassword) {
       $("passBox").classList.remove("hidden");
       $("loginStatus").textContent = "Butuh password 2FA";
     } else {
-      $("loginStatus").textContent = "Login berhasil!";
+      $("loginStatus").textContent = `Login berhasil sebagai ${result.label}!`;
       resetLoginForm();
       refreshAccounts();
     }
@@ -141,14 +142,13 @@ $("btnVerifyCode").onclick = async () => {
 };
 
 $("btnVerifyPassword").onclick = async () => {
-  const label = $("loginLabel").value.trim();
   const password = $("loginPassword").value.trim();
   try {
-    await api("/api/login/verify-password", {
+    const result = await api("/api/login/verify-password", {
       method: "POST",
-      body: JSON.stringify({ label, password }),
+      body: JSON.stringify({ key: pendingLoginKey, password }),
     });
-    $("loginStatus").textContent = "Login berhasil!";
+    $("loginStatus").textContent = `Login berhasil sebagai ${result.label}!`;
     resetLoginForm();
     refreshAccounts();
   } catch (e) {
@@ -159,14 +159,14 @@ $("btnVerifyPassword").onclick = async () => {
 $("btnImportPyrogram").onclick = async () => {
   const label = $("pyroLabel").value.trim();
   const pyrogramSession = $("pyroSession").value.trim();
-  if (!label || !pyrogramSession) return alert("Isi label & session string dulu");
+  if (!pyrogramSession) return alert("Isi session string dulu");
   $("loginStatus").textContent = "Mengonversi & verifikasi session...";
   try {
     const result = await api("/api/login/import-pyrogram", {
       method: "POST",
       body: JSON.stringify({ label, pyrogramSession }),
     });
-    $("loginStatus").textContent = `Berhasil! Login sebagai @${result.username || result.firstName || result.userId}`;
+    $("loginStatus").textContent = `Berhasil! Login sebagai ${result.label}`;
     $("pyroLabel").value = "";
     $("pyroSession").value = "";
     refreshAccounts();
