@@ -3,14 +3,26 @@ let pendingLoginKey = null;
 
 const $ = (id) => document.getElementById(id);
 
-async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request gagal");
-  return data;
+async function api(path, opts = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      ...opts,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request gagal");
+    return data;
+  } catch (e) {
+    if (e.name === "AbortError") {
+      throw new Error("Timeout — koneksi ke akun ini kelamaan, coba lagi");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /* ---------- Drawer (mobile slide-in panel) ---------- */
