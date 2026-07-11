@@ -53,20 +53,33 @@ function saveAccounts(data) {
 
 // in-memory: active connected clients, keyed by label
 const clients = {}; // label -> TelegramClient
+// in-memory: connection attempts in progress, keyed by label — prevents
+// duplicate concurrent connects to the same account (e.g. double-tap)
+const connecting = {}; // label -> Promise<TelegramClient>
 // in-memory: logins in progress, keyed by label
 const pending = {}; // label -> { client, phoneCodeHash, phone }
 
 async function getOrCreateClient(label, sessionStr = "") {
   if (clients[label]) return clients[label];
-  const client = new TelegramClient(
-    new StringSession(sessionStr),
-    API_ID,
-    API_HASH,
-    { connectionRetries: 5 }
-  );
-  await client.connect();
-  clients[label] = client;
-  return client;
+  if (connecting[label]) return connecting[label]; // already connecting, wait for it
+
+  connecting[label] = (async () => {
+    const client = new TelegramClient(
+      new StringSession(sessionStr),
+      API_ID,
+      API_HASH,
+      { connectionRetries: 5 }
+    );
+    await client.connect();
+    clients[label] = client;
+    return client;
+  })();
+
+  try {
+    return await connecting[label];
+  } finally {
+    delete connecting[label];
+  }
 }
 
 // NOTE: accounts are connected lazily (on first use via requireClient),
