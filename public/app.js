@@ -36,9 +36,10 @@ async function refreshAccounts() {
   accounts.forEach((acc) => {
     const div = document.createElement("div");
     div.className = "accItem" + (acc.label === activeLabel ? " active" : "");
+    const initial = acc.label.charAt(0).toUpperCase();
     div.innerHTML = `
       <div class="accInfo">
-        <span class="dot ${acc.connected ? "online" : ""}"></span>
+        <div class="avatar">${initial}<span class="dot ${acc.connected ? "online" : ""}"></span></div>
         <div>
           <div class="accLabel">${acc.label}</div>
           <div class="accPhone">${acc.phone}</div>
@@ -197,15 +198,26 @@ function showChatEntry() {
 
   const div = document.createElement("div");
   div.className = "chatItem";
-  div.innerHTML = `<span>Telegram</span>`;
+  div.innerHTML = `
+    <div class="avatar">T</div>
+    <div class="chatMeta">
+      <span>Telegram</span>
+      <span class="chatSub">notifikasi resmi</span>
+    </div>
+  `;
   div.onclick = () => loadOfficialChat();
   box.appendChild(div);
 
+  $("chatHeader").classList.add("hidden");
   $("messageView").innerHTML = `<div class="emptyState"><span class="prompt">›</span> Buka chat di sebelah buat lihat pesan</div>`;
 }
 
+$("btnBack").onclick = () => showChatEntry();
+
 async function loadOfficialChat() {
   if (!activeLabel) return;
+  $("chatTitle").textContent = "Telegram";
+  $("chatHeader").classList.remove("hidden");
   $("messageView").innerHTML = `<div class="emptyState"><span class="prompt">›</span> Memuat...</div>`;
   try {
     const messages = await api(`/api/chats/${activeLabel}/official`);
@@ -222,6 +234,8 @@ async function loadMessages(usernameOrId) {
     const messages = await api(
       `/api/messages/${activeLabel}?username=${encodeURIComponent(usernameOrId)}&limit=50`
     );
+    $("chatTitle").textContent = usernameOrId;
+    $("chatHeader").classList.remove("hidden");
     renderMessages(messages);
     $("chatList").classList.add("collapsed");
   } catch (e) {
