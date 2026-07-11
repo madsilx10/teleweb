@@ -69,18 +69,9 @@ async function getOrCreateClient(label, sessionStr = "") {
   return client;
 }
 
-// reconnect saved accounts on boot
-(async () => {
-  const accounts = loadAccounts();
-  for (const label of Object.keys(accounts)) {
-    try {
-      await getOrCreateClient(label, accounts[label].session);
-      console.log(`[OK] Reconnected account: ${label}`);
-    } catch (e) {
-      console.error(`[FAIL] Reconnect ${label}:`, e.message);
-    }
-  }
-})();
+// NOTE: accounts are connected lazily (on first use via requireClient),
+// not all at once on boot — keeps startup fast and memory low when you
+// have many saved accounts but only use a few at a time.
 
 const app = express();
 app.use(express.json());
@@ -229,6 +220,24 @@ app.delete("/api/accounts/:label", async (req, res) => {
 
 // Telegram's official service notifications account (login codes, announcements)
 const TELEGRAM_OFFICIAL_ID = 777000;
+
+// Lightweight unread check for just the official chat (single peer, not a full dialog scan)
+app.get("/api/chats/:label/official/unread", async (req, res) => {
+  const { label } = req.params;
+  try {
+    const client = await requireClient(label);
+    const inputPeer = await client.getInputEntity(TELEGRAM_OFFICIAL_ID);
+    const result = await client.invoke(
+      new Api.messages.GetPeerDialogs({
+        peers: [new Api.InputDialogPeer({ peer: inputPeer })],
+      })
+    );
+    const dialog = result.dialogs[0];
+    res.json({ unreadCount: dialog?.unreadCount || 0 });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // The only chat shown by default — Telegram's own service notifications chat.
 app.get("/api/chats/:label/official", async (req, res) => {
