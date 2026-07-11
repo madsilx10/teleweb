@@ -42,11 +42,25 @@ async function refreshAccounts() {
         <div class="avatar">${initial}<span class="dot ${acc.connected ? "online" : ""}"></span></div>
         <div>
           <div class="accLabel">${acc.label}</div>
-          <div class="accPhone">${acc.phone}</div>
+          <div class="accPhoneRow">
+            <span class="accPhone">${acc.phone}</span>
+            <button class="copyBtn" data-phone="${acc.phone}" title="Copy nomor">⧉</button>
+          </div>
         </div>
       </div>
       <span class="del" data-label="${acc.label}">✕</span>
     `;
+    div.querySelector(".copyBtn").onclick = async (e) => {
+      e.stopPropagation();
+      const btn = e.currentTarget;
+      try {
+        await navigator.clipboard.writeText(btn.dataset.phone);
+        btn.textContent = "✓";
+        setTimeout(() => (btn.textContent = "⧉"), 1200);
+      } catch {
+        alert("Gagal copy, nomor: " + btn.dataset.phone);
+      }
+    };
     div.onclick = (e) => {
       if (e.target.classList.contains("del")) return;
       activeLabel = acc.label;
@@ -191,7 +205,7 @@ function renderMessages(messages) {
 }
 
 // Shows a single chat bubble ("Telegram") — messages only load when tapped.
-function showChatEntry() {
+async function showChatEntry() {
   const box = $("chatList");
   box.classList.remove("collapsed");
   box.innerHTML = "";
@@ -210,6 +224,19 @@ function showChatEntry() {
 
   $("chatHeader").classList.add("hidden");
   $("messageView").innerHTML = `<div class="emptyState"><span class="prompt">›</span> Buka chat di sebelah buat lihat pesan</div>`;
+
+  // check unread count for just this one chat (lightweight, single-peer check)
+  try {
+    const { unreadCount } = await api(`/api/chats/${activeLabel}/official/unread`);
+    if (unreadCount > 0) {
+      const badge = document.createElement("span");
+      badge.className = "unreadBadge";
+      badge.textContent = unreadCount;
+      div.appendChild(badge);
+    }
+  } catch {
+    // silently ignore — badge is a nice-to-have, not critical
+  }
 }
 
 $("btnBack").onclick = () => showChatEntry();
