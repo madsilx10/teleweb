@@ -154,7 +154,7 @@ app.post("/api/login/verify-password", async (req, res) => {
 // persists the session, and re-keys the in-memory client if needed.
 async function finishLogin(tempKey, state) {
   const me = await state.client.getMe();
-  const finalLabel = state.requestedLabel || me.username || me.firstName || state.phone;
+  const finalLabel = state.requestedLabel || me.firstName || me.username || state.phone;
 
   const sessionStr = state.client.session.save();
   const accounts = loadAccounts();
@@ -199,7 +199,7 @@ app.post("/api/login/import-pyrogram", async (req, res) => {
     const tempKey = `_temp_${userId}_${Date.now()}`;
     const client = await getOrCreateClient(tempKey, gramjsSessionStr);
     const me = await client.getMe();
-    const finalLabel = trimmedLabel || me.username || me.firstName || userId;
+    const finalLabel = trimmedLabel || me.firstName || me.username || userId;
 
     if (clients[finalLabel] && finalLabel !== tempKey) {
       try { await clients[finalLabel].disconnect(); } catch {}
