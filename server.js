@@ -79,13 +79,17 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ---------- LOGIN FLOW ----------
 
-// Step 1: send OTP code to phone
+// Step 1: send OTP code to phone. Label is optional — if omitted, the
+// final label is auto-derived from the Telegram profile after login.
 app.post("/api/login/send-code", async (req, res) => {
   const { label, phone } = req.body;
-  if (!label || !phone) return res.status(400).json({ error: "label & phone wajib diisi" });
+  if (!phone) return res.status(400).json({ error: "phone wajib diisi" });
+
+  const trimmedLabel = label && label.trim() ? label.trim() : null;
+  const key = trimmedLabel || `_pending_${phone}_${Date.now()}`;
 
   try {
-    const client = await getOrCreateClient(label, "");
+    const client = await getOrCreateClient(key, "");
     const result = await client.invoke(
       new Api.auth.SendCode({
         phoneNumber: phone,
@@ -94,19 +98,19 @@ app.post("/api/login/send-code", async (req, res) => {
         settings: new Api.CodeSettings({}),
       })
     );
-    pending[label] = { client, phoneCodeHash: result.phoneCodeHash, phone };
-    res.json({ ok: true, message: "Kode OTP terkirim ke Telegram/SMS" });
+    pending[key] = { client, phoneCodeHash: result.phoneCodeHash, phone, requestedLabel: trimmedLabel };
+    res.json({ ok: true, key, message: "Kode OTP terkirim ke Telegram/SMS" });
   } catch (e) {
-    delete clients[label];
+    delete clients[key];
     res.status(500).json({ error: e.message });
   }
 });
 
 // Step 2: verify OTP code
 app.post("/api/login/verify-code", async (req, res) => {
-  const { label, code } = req.body;
-  const state = pending[label];
-  if (!state) return res.status(400).json({ error: "Belum ada proses login untuk label ini, panggil send-code dulu" });
+  const { key, code } = req.body;
+  const state = pending[key];
+  if (!state) return res.status(400).json({ error: "Belum ada proses login untuk sesi ini, panggil send-code dulu" });
 
   try {
     await state.client.invoke(
@@ -117,8 +121,8 @@ app.post("/api/login/verify-code", async (req, res) => {
       })
     );
     // success, no 2FA needed
-    finishLogin(label, state);
-    res.json({ ok: true, needPassword: false });
+    const finalLabel = await finishLogin(key, state);
+    res.json({ ok: true, needPassword: false, label: finalLabel });
   } catch (e) {
     if (e.message && e.message.includes("SESSION_PASSWORD_NEEDED")) {
       res.json({ ok: true, needPassword: true });
@@ -130,27 +134,44 @@ app.post("/api/login/verify-code", async (req, res) => {
 
 // Step 3: verify 2FA password (only if needPassword=true from step 2)
 app.post("/api/login/verify-password", async (req, res) => {
-  const { label, password } = req.body;
-  const state = pending[label];
-  if (!state) return res.status(400).json({ error: "Belum ada proses login untuk label ini" });
+  const { key, password } = req.body;
+  const state = pending[key];
+  if (!state) return res.status(400).json({ error: "Belum ada proses login untuk sesi ini" });
 
   try {
     const passwordInfo = await state.client.invoke(new Api.account.GetPassword());
     const passwordCheck = await computeCheck(passwordInfo, password);
     await state.client.invoke(new Api.auth.CheckPassword({ password: passwordCheck }));
-    finishLogin(label, state);
-    res.json({ ok: true });
+    const finalLabel = await finishLogin(key, state);
+    res.json({ ok: true, label: finalLabel });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-function finishLogin(label, state) {
+// Finalizes login: fetches the Telegram profile, derives the account label
+// (custom label if the user typed one, otherwise username/first name/phone),
+// persists the session, and re-keys the in-memory client if needed.
+async function finishLogin(tempKey, state) {
+  const me = await state.client.getMe();
+  const finalLabel = state.requestedLabel || me.username || me.firstName || state.phone;
+
   const sessionStr = state.client.session.save();
   const accounts = loadAccounts();
-  accounts[label] = { phone: state.phone, session: sessionStr };
+  accounts[finalLabel] = {
+    phone: state.phone,
+    username: me.username || null,
+    firstName: me.firstName || null,
+    session: sessionStr,
+  };
   saveAccounts(accounts);
-  delete pending[label];
+
+  if (finalLabel !== tempKey) {
+    clients[finalLabel] = clients[tempKey];
+    delete clients[tempKey];
+  }
+  delete pending[tempKey];
+  return finalLabel;
 }
 
 // Import an existing Pyrogram session directly — no phone/OTP needed.
@@ -158,9 +179,10 @@ function finishLogin(label, state) {
 // verifies it actually works before saving.
 app.post("/api/login/import-pyrogram", async (req, res) => {
   const { label, pyrogramSession } = req.body;
-  if (!label || !pyrogramSession) {
-    return res.status(400).json({ error: "label & pyrogramSession wajib diisi" });
+  if (!pyrogramSession) {
+    return res.status(400).json({ error: "pyrogramSession wajib diisi" });
   }
+  const trimmedLabel = label && label.trim() ? label.trim() : null;
 
   try {
     const { dcId, authKey, userId } = decodePyrogramSession(pyrogramSession);
@@ -174,19 +196,27 @@ app.post("/api/login/import-pyrogram", async (req, res) => {
     session.setAuthKey(ak, dcId);
     const gramjsSessionStr = session.save();
 
-    // verify by actually connecting + fetching self info
-    if (clients[label]) {
-      try { await clients[label].disconnect(); } catch {}
-      delete clients[label];
-    }
-    const client = await getOrCreateClient(label, gramjsSessionStr);
+    const tempKey = `_temp_${userId}_${Date.now()}`;
+    const client = await getOrCreateClient(tempKey, gramjsSessionStr);
     const me = await client.getMe();
+    const finalLabel = trimmedLabel || me.username || me.firstName || userId;
+
+    if (clients[finalLabel] && finalLabel !== tempKey) {
+      try { await clients[finalLabel].disconnect(); } catch {}
+    }
+    clients[finalLabel] = client;
+    if (finalLabel !== tempKey) delete clients[tempKey];
 
     const accounts = loadAccounts();
-    accounts[label] = { phone: me.phone || userId, session: gramjsSessionStr };
+    accounts[finalLabel] = {
+      phone: me.phone || userId,
+      username: me.username || null,
+      firstName: me.firstName || null,
+      session: gramjsSessionStr,
+    };
     saveAccounts(accounts);
 
-    res.json({ ok: true, userId, username: me.username, firstName: me.firstName });
+    res.json({ ok: true, label: finalLabel, userId, username: me.username, firstName: me.firstName });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -199,6 +229,7 @@ app.get("/api/accounts", (req, res) => {
   const list = Object.keys(accounts).map((label) => ({
     label,
     phone: accounts[label].phone,
+    username: accounts[label].username || null,
     connected: !!clients[label],
   }));
   res.json(list);
